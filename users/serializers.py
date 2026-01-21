@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User
+from .models import User, SystemLog
 import re
 
 class UserSerializer(serializers.ModelSerializer):
@@ -57,3 +57,10 @@ class UserSerializer(serializers.ModelSerializer):
         
         instance.save()
         return instance
+
+class SystemLogSerializer(serializers.ModelSerializer):
+    user_name = serializers.ReadOnlyField(source='user.name', default='System')
+
+    class Meta:
+        model = SystemLog
+        fields = ['id', 'timestamp', 'user', 'user_name', 'ip_address', 'action', 'severity']

@@ -1,12 +1,66 @@
 from rest_framework import viewsets, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .models import User
-from .serializers import UserSerializer
+from django.db import models
+from .models import User, SystemLog
+from .serializers import UserSerializer, SystemLogSerializer
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
+
+class SystemLogViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = SystemLog.objects.all().order_by('-timestamp')
+    serializer_class = SystemLogSerializer
+    
+    def get_queryset(self):
+        queryset = SystemLog.objects.all().order_by('-timestamp')
+        
+        # Search by user name, action, or IP address
+        search = self.request.query_params.get('search', None)
+        if search:
+            queryset = queryset.filter(
+                models.Q(user__name__icontains=search) |
+                models.Q(action__icontains=search) |
+                models.Q(ip_address__icontains=search)
+            )
+        
+        # Filter by severity
+        severity = self.request.query_params.get('severity', None)
+        if severity and severity != 'All Severities':
+            queryset = queryset.filter(severity=severity)
+        
+        # Filter by date range
+        start_date = self.request.query_params.get('start_date', None)
+        end_date = self.request.query_params.get('end_date', None)
+        if start_date:
+            queryset = queryset.filter(timestamp__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(timestamp__lte=end_date)
+        
+        return queryset
+
+class DashboardSummaryView(APIView):
+    def get(self, request):
+        # Calculate dashboard metrics
+        active_users = User.objects.filter(isActive=True).count()
+        total_logs = SystemLog.objects.count()
+        security_alerts = SystemLog.objects.filter(severity__in=['Error', 'Warning']).count()
+        
+        # Mock storage data for now (to be replaced with real storage logic later)
+        storage_stats = {
+            'used_percentage': 75,
+            'patient_records_size': '824 GB',
+            'imaging_data_size': '1.2 TB',
+            'free_space': '650 GB'
+        }
+        
+        return Response({
+            'active_users': active_users,
+            'system_uptime': '99.98%',
+            'security_alerts': security_alerts,
+            'storage_stats': storage_stats
+        }, status=status.HTTP_200_OK)
 
 class LoginView(APIView):
     def post(self, request):
