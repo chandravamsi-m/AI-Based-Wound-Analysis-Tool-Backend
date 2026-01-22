@@ -4,14 +4,22 @@ import re
 
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False, style={'input_type': 'password'})
+    activity = serializers.SerializerMethodField()  # Computed field for dynamic activity
     
+
     class Meta:
         model = User
-        fields = ['id', 'name', 'email', 'password', 'status', 'role', 'activity', 'isActive']
+        fields = ['id', 'name', 'email', 'password', 'status', 'role', 'activity', 'last_activity', 'isActive']
         extra_kwargs = {
-            'password': {'write_only': True}
+            'password': {'write_only': True},
+            'last_activity': {'read_only': True}
         }
     
+    def get_activity(self, obj):
+        """Return dynamic activity status"""
+        return obj.get_activity_status()
+    
+
     def validate_password(self, value):
         """
         Validate password requirements:

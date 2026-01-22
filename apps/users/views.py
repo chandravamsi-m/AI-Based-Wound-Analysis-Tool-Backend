@@ -85,6 +85,9 @@ class LoginView(APIView):
             
             # Verify password
             if user.verify_password(password):
+                # Update last activity
+                user.update_activity()
+                
                 # Serialize user data (password won't be included due to write_only)
                 serializer = UserSerializer(user)
                 return Response({
