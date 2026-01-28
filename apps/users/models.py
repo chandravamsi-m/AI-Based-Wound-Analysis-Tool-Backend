@@ -1,9 +1,24 @@
 from django.db import models
-from django.contrib.auth.hashers import make_password, check_password
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from django.utils import timezone
 from datetime import timedelta
 
-class User(models.Model):
+class UserManager(BaseUserManager):
+    def create_user(self, email, password=None, **extra_fields):
+        if not email:
+            raise ValueError('The Email field must be set')
+        email = self.normalize_email(email)
+        user = self.model(email=email, **extra_fields)
+        if password:
+            user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, email, password=None, **extra_fields):
+        extra_fields.setdefault('role', 'Admin')
+        return self.create_user(email, password, **extra_fields)
+
+class User(AbstractBaseUser):
     STAFF_ROLES = [
         ('Doctor', 'Doctor'),
         ('Nurse', 'Nurse'),
@@ -17,20 +32,22 @@ class User(models.Model):
 
     name = models.CharField(max_length=100)
     email = models.EmailField(unique=True)
-    password = models.CharField(max_length=128, blank=True, null=True)  # Stores hashed password
+    # password is provided by AbstractBaseUser
     status = models.CharField(max_length=20, choices=STAFF_STATUS, default='ACTIVE')
     role = models.CharField(max_length=20, choices=STAFF_ROLES)
     activity = models.CharField(max_length=50, blank=True)  # Deprecated - kept for backward compatibility
     last_activity = models.DateTimeField(null=True, blank=True)  # New field for tracking actual activity
     isActive = models.BooleanField(default=True)
 
-    def set_password(self, raw_password):
-        """Hash and set the password"""
-        self.password = make_password(raw_password)
+    objects = UserManager()
 
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = ['name', 'role']
+
+    # Keep verify_password for backward compatibility with existing code
     def verify_password(self, raw_password):
         """Check if the provided password matches the hashed password"""
-        return check_password(raw_password, self.password)
+        return self.check_password(raw_password)
     
     def update_activity(self):
         """Update the last_activity timestamp to now"""
