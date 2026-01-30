@@ -1,11 +1,122 @@
 from django.db import models
+from django.conf import settings
+from django.utils import timezone
 
 class Patient(models.Model):
+    # Core identification
     name = models.CharField(max_length=100)
-    mrn = models.CharField(max_length=50, unique=True, verbose_name="Medical Record Number")
+    mrn = models.CharField(max_length=50, unique=True, verbose_name="Medical Record Number", blank=True)
     
+    # Demographic / Clinical details
+    age = models.IntegerField(null=True, blank=True)
+    gender = models.CharField(max_length=20, choices=[('Male', 'Male'), ('Female', 'Female'), ('Other', 'Other')], null=True, blank=True)
+    date_of_birth = models.DateField(null=True, blank=True)
+    bed = models.CharField(max_length=20, null=True, blank=True)
+    ward = models.CharField(max_length=50, null=True, blank=True)
+    
+    # Medical Context
+    assigned_physician = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='patients_under_care'
+    )
+    diagnosis = models.TextField(null=True, blank=True)
+    medical_history = models.TextField(null=True, blank=True)
+    admission_date = models.DateTimeField(default=timezone.now)
+    
+    STATUS_CHOICES = [
+        ('Stable', 'Stable'),
+        ('Observation', 'Observation'),
+        ('Critical', 'Critical'),
+        ('At Risk', 'At Risk'),
+    ]
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Stable')
+
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        if not self.mrn:
+            # Auto-generate MRN in sequence MRN0001, MRN0002...
+            last_patient = Patient.objects.all().order_by('id').last()
+            if not last_patient:
+                seq = 1
+            else:
+                # Extract digits from the end of the last MRN
+                import re
+                try:
+                    match = re.search(r'(\d+)$', last_patient.mrn)
+                    if match:
+                        seq = int(match.group(1)) + 1
+                    else:
+                        seq = last_patient.id + 1
+                except (ValueError, TypeError):
+                    seq = last_patient.id + 1
+            
+            self.mrn = f"MRN{seq:04d}"
+        
+        super(Patient, self).save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.name} ({self.mrn})"
+
+class Wound(models.Model):
+    patient = models.ForeignKey(Patient, related_name='wounds', on_delete=models.CASCADE)
+    location = models.CharField(max_length=200, default="General")
+    created_at = models.DateTimeField(default=timezone.now)
+    
+    def __str__(self):
+        return f"Wound for {self.patient.name}"
+
+class WoundAssessment(models.Model):
+    wound = models.ForeignKey(Wound, related_name='assessments', on_delete=models.CASCADE)
+    nurse = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    image = models.TextField(help_text="Base64 encoded image data") # Stores image directly in DB
+    
+    width = models.FloatField(help_text="Width in cm")
+    depth = models.FloatField(help_text="Depth in cm")
+    stage = models.CharField(max_length=50) # e.g. "Stage 2"
+    
+    notes = models.TextField(blank=True)
+    is_escalated = models.BooleanField(default=False)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    def __str__(self):
+        return f"Assessment {self.id} for {self.wound.patient.name}"
+
+class Task(models.Model):
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('COMPLETED', 'Completed'),
+        ('MISSED', 'Missed'),
+        ('CANCELLED', 'Cancelled')
+    ]
+    
+    patient = models.ForeignKey(Patient, related_name='tasks', on_delete=models.CASCADE)
+    assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, related_name='assigned_tasks', on_delete=models.SET_NULL, null=True, blank=True)
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    due_time = models.CharField(max_length=10) # e.g., "14:00"
+    priority = models.CharField(max_length=20, choices=[('high', 'High'), ('medium', 'Medium'), ('low', 'Low')], default='medium')
+    
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    is_completed = models.BooleanField(default=False)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    assigned_at = models.DateTimeField(default=timezone.now)
+
+    def __str__(self):
+        return f"[{self.status}] {self.title} for {self.patient.name}"
+
+class ClinicalRecord(models.Model):
+    patient = models.ForeignKey(Patient, related_name='clinical_records', on_delete=models.CASCADE)
+    recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    heart_rate = models.IntegerField(null=True, blank=True)
+    respiratory_rate = models.IntegerField(null=True, blank=True)
+    oxygen_saturation = models.IntegerField(null=True, blank=True)
+    nurse_notes = models.TextField(blank=True)
+    recorded_at = models.DateTimeField(default=timezone.now)
 
 class Alert(models.Model):
     PRIORITY_CHOICES = [
@@ -15,11 +126,16 @@ class Alert(models.Model):
     ]
     
     patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name='alerts')
-    alert_type = models.CharField(max_length=100) # e.g., 'Deteriorating Wound'
+    assessment = models.ForeignKey(WoundAssessment, on_delete=models.CASCADE, null=True, blank=True)
+    triggered_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    
+    alert_type = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     severity = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default='Info')
-    timestamp = models.DateTimeField(auto_now_add=True)
+    
+    timestamp = models.DateTimeField(default=timezone.now)
     is_dismissed = models.BooleanField(default=False)
+    is_resolved = models.BooleanField(default=False)
     resolved_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):

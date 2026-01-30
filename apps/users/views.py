@@ -18,7 +18,10 @@ from datetime import timedelta
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
-    permission_classes = [IsAdmin]  # Only admins can manage users
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [IsAuthenticated()]
+        return [IsAdmin()]
 
     def perform_create(self, serializer):
         user = serializer.save()
@@ -278,13 +281,8 @@ class CustomTokenObtainPairView(APIView):
             refresh['name'] = user.name
             refresh['user_id'] = user.id
             
-            # Log successful login
-            log_system_event(
-                user=user,
-                action=f"User {user.email} logged in successfully",
-                severity='Success',
-                ip_address=get_client_ip(request)
-            )
+            # Removed successful login logging to reduce noise
+            # log_system_event(...)
             
             return Response({
                 'refresh': str(refresh),
@@ -325,13 +323,8 @@ class LogoutView(APIView):
                 token = RefreshToken(refresh_token)
                 token.blacklist()
             
-            # Log logout
-            log_system_event(
-                user=request.user,
-                action=f"User {request.user.email} logged out",
-                severity='Info',
-                ip_address=get_client_ip(request)
-            )
+            # Removed redundant logout logging
+            # log_system_event(...)
             
             return Response(
                 {'message': 'Successfully logged out'},
@@ -374,13 +367,8 @@ class ChangePasswordView(APIView):
             user.set_password(serializer.validated_data['new_password'])
             user.save()
             
-            # Log password change
-            log_system_event(
-                user=user,
-                action=f"User {user.email} changed password",
-                severity='Info',
-                ip_address=get_client_ip(request)
-            )
+            # Removed noisy password change logging
+            # log_system_event(...)
             
             return Response(
                 {'message': 'Password changed successfully'},
@@ -422,13 +410,8 @@ class LoginView(APIView):
                 # Update last activity
                 user.update_activity()
                 
-                # Log successful login
-                log_system_event(
-                    user=user, 
-                    action=f"User {user.email} logged in successfully", 
-                    severity='Success',
-                    ip_address=get_client_ip(request)
-                )
+                # Removed successful login logging to reduce noise
+                # log_system_event(...)
                 
                 # Serialize user data (password won't be included due to write_only)
                 serializer = UserSerializer(user)
