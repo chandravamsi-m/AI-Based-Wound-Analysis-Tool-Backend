@@ -63,8 +63,16 @@ class Patient(models.Model):
         return f"{self.name} ({self.mrn})"
 
 class Wound(models.Model):
+    WOUND_TYPES = [
+        ('Venous Ulcer', 'Venous Ulcer'),
+        ('Pressure Ulcer', 'Pressure Ulcer'),
+        ('Diabetic Foot', 'Diabetic Foot'),
+        ('Surgical', 'Surgical'),
+        ('Other', 'Other'),
+    ]
     patient = models.ForeignKey(Patient, related_name='wounds', on_delete=models.CASCADE)
     location = models.CharField(max_length=200, default="General")
+    wound_type = models.CharField(max_length=50, choices=WOUND_TYPES, default='Other')
     created_at = models.DateTimeField(default=timezone.now)
     
     def __str__(self):
